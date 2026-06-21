@@ -1,35 +1,36 @@
-const express = require('express');
-const http = require('http');
+const express   = require('express');
+const http      = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
-const fs = require('fs');
+const path      = require('path');
+const mongoose  = require('mongoose');
 
-const app = express();
+const app    = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const USERS_FILE = path.join(__dirname, 'users.json');
+// ---- DATABASE ----
+const MONGO_URI =
+    'mongodb+srv://aleksandrekhokerashvili_db_user:QWLibnpv7LZ4KiPu@cluster0.z0pxavb.mongodb.net/blind_timer?appName=Cluster0';
 
-let users = {};
-if (fs.existsSync(USERS_FILE)) {
-    try { users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); }
-    catch (e) { users = {}; }
-}
+mongoose.connect(MONGO_URI)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err));
 
-// Safe migration for existing profiles missing new fields
-for (const u of Object.values(users)) {
-    if (u.totalDiffSum === undefined) u.totalDiffSum = 0;
-    if (u.maxStreak    === undefined) u.maxStreak    = 0;
-    if (u.totalGames   === undefined) u.totalGames   = 0;
-    if (u.totalWins    === undefined) u.totalWins    = 0;
-}
+const userSchema = new mongoose.Schema({
+    username:     { type: String, required: true, unique: true },
+    password:     { type: String, required: true },
+    maxStreak:    { type: Number, default: 0 },
+    totalGames:   { type: Number, default: 0 },
+    totalWins:    { type: Number, default: 0 },
+    totalDiffSum: { type: Number, default: 0 },
+    avatar:       { type: String, default: null },
+});
 
-function saveUsers() {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
-}
+const User = mongoose.model('User', userSchema);
 
+// ---- HELPERS ----
 function getRankTitle(totalWins) {
     if (totalWins >= 15) return 'ტაიმ მასტერი';
     if (totalWins >= 8)  return 'ქრონოსი';
@@ -37,19 +38,18 @@ function getRankTitle(totalWins) {
     return 'დამწყები';
 }
 
-function buildProfilePayload(username) {
-    const u = users[username];
-    if (!u) return null;
+function buildProfilePayload(user) {
     return {
-        username,
-        maxStreak:    u.maxStreak,
-        totalGames:   u.totalGames,
-        totalWins:    u.totalWins,
-        totalDiffSum: u.totalDiffSum,
-        avatar:       u.avatar || null,
+        username:     user.username,
+        maxStreak:    user.maxStreak,
+        totalGames:   user.totalGames,
+        totalWins:    user.totalWins,
+        totalDiffSum: user.totalDiffSum,
+        avatar:       user.avatar || null,
     };
 }
 
+// ---- ROOM STATE (in-memory) ----
 let rooms = {};
 
 const systemChallenges = [
@@ -109,10 +109,11 @@ function playerLeaveRoom(socket) {
         room.players[newHostId].isHost = true;
     }
 
+    // Auto-resolve if the disconnecting player was the last one everyone was waiting on
     if (wasInCounting) {
         const remaining = Object.values(room.players);
         if (remaining.length > 0 && remaining.every(p => p.ready)) {
-            resolveRound(code);
+            resolveRound(code).catch(err => console.error('resolveRound error after disconnect:', err));
             return;
         }
     }
@@ -120,33 +121,38 @@ function playerLeaveRoom(socket) {
     io.to(code).emit('room_update', room);
 }
 
+// ---- SOCKET HANDLERS ----
 io.on('connection', (socket) => {
 
-    socket.on('register_user', ({ username, password, avatar }) => {
+    socket.on('register_user', async ({ username, password, avatar }) => {
         if (!username || !password) {
             return socket.emit('auth_response', { success: false, error: 'შეიყვანეთ სახელი და პაროლი' });
         }
-        if (users[username]) {
-            return socket.emit('auth_response', { success: false, error: 'ეს სახელი უკვე დაკავებულია' });
+        try {
+            const existing = await User.findOne({ username });
+            if (existing) {
+                return socket.emit('auth_response', { success: false, error: 'ეს სახელი უკვე დაკავებულია' });
+            }
+            const user = new User({ username, password, avatar: avatar || null });
+            await user.save();
+            socket.emit('auth_response', { success: true, user: buildProfilePayload(user) });
+        } catch (err) {
+            console.error('register_user error:', err);
+            socket.emit('auth_response', { success: false, error: 'სერვერის შეცდომა' });
         }
-        users[username] = {
-            password,
-            maxStreak:    0,
-            totalGames:   0,
-            totalWins:    0,
-            totalDiffSum: 0,
-            avatar:       avatar || null,
-        };
-        saveUsers();
-        socket.emit('auth_response', { success: true, user: buildProfilePayload(username) });
     });
 
-    socket.on('login_user', ({ username, password }) => {
-        const u = users[username];
-        if (!u || u.password !== password) {
-            return socket.emit('auth_response', { success: false, error: 'არასწორი სახელი ან პაროლი' });
+    socket.on('login_user', async ({ username, password }) => {
+        try {
+            const user = await User.findOne({ username });
+            if (!user || user.password !== password) {
+                return socket.emit('auth_response', { success: false, error: 'არასწორი სახელი ან პაროლი' });
+            }
+            socket.emit('auth_response', { success: true, user: buildProfilePayload(user) });
+        } catch (err) {
+            console.error('login_user error:', err);
+            socket.emit('auth_response', { success: false, error: 'სერვერის შეცდომა' });
         }
-        socket.emit('auth_response', { success: true, user: buildProfilePayload(username) });
     });
 
     socket.on('create_room', ({ username }, cb) => {
@@ -193,7 +199,7 @@ io.on('connection', (socket) => {
         room.targetTime = generateTargetTime();
         room.status = 'ROUND_SETUP';
         for (const id in room.players) {
-            room.players[id].ready      = false;
+            room.players[id].ready       = false;
             room.players[id].clickedTime = null;
             room.players[id].diff        = null;
         }
@@ -208,7 +214,7 @@ io.on('connection', (socket) => {
         io.to(socket.roomCode).emit('room_update', room);
     });
 
-    socket.on('stop_timer', (elapsedTime) => {
+    socket.on('stop_timer', async (elapsedTime) => {
         const room = rooms[socket.roomCode];
         if (!room || room.status !== 'COUNTING') return;
         const player = room.players[socket.id];
@@ -217,8 +223,11 @@ io.on('connection', (socket) => {
             player.diff        = parseFloat(Math.abs(player.clickedTime - room.targetTime).toFixed(2));
             player.ready       = true;
             const allReady = Object.values(room.players).every(p => p.ready);
-            if (allReady) resolveRound(socket.roomCode);
-            else io.to(socket.roomCode).emit('room_update', room);
+            if (allReady) {
+                await resolveRound(socket.roomCode);
+            } else {
+                io.to(socket.roomCode).emit('room_update', room);
+            }
         }
     });
 
@@ -231,8 +240,8 @@ io.on('connection', (socket) => {
             room.challengeText = systemChallenges[Math.floor(Math.random() * systemChallenges.length)];
         }
         for (const id in room.players) {
-            const p      = room.players[id];
-            p.ready      = false;
+            const p       = room.players[id];
+            p.ready       = false;
             p.clickedTime = null;
             p.diff        = null;
             p.brokeStreak = false;
@@ -243,10 +252,12 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => playerLeaveRoom(socket));
 });
 
-function resolveRound(code) {
+// ---- RESOLVE ROUND (async — writes to MongoDB) ----
+async function resolveRound(code) {
     const room = rooms[code];
     if (!room) return;
     room.status = 'RESULTS';
+
     const arr = Object.values(room.players);
     if (arr.length === 0) return;
 
@@ -257,25 +268,14 @@ function resolveRound(code) {
         if (p.diff > loser.diff)  loser  = p;
     });
 
+    // Update in-memory streaks first so room_update carries the correct values
     arr.forEach(p => {
-        const u = users[p.name];
-
-        if (u) {
-            u.totalGames++;
-            // Accumulate precision deviation for every completed round
-            if (p.diff !== null) u.totalDiffSum = parseFloat(((u.totalDiffSum || 0) + p.diff).toFixed(2));
-        }
-
         if (p.id === winner.id) {
             p.currentStreak++;
             p.brokeStreak = false;
-            if (u) {
-                u.totalWins++;
-                if (p.currentStreak > u.maxStreak) u.maxStreak = p.currentStreak;
-            }
         } else {
             if (p.currentStreak >= 2) {
-                p.brokeStreak = true;
+                p.brokeStreak         = true;
                 p.previousStreakValue = p.currentStreak;
             } else {
                 p.brokeStreak = false;
@@ -284,15 +284,34 @@ function resolveRound(code) {
         }
     });
 
-    saveUsers();
     room.lastWinnerName = winner.name;
     room.lastLoserName  = loser.name;
+
+    // Broadcast results immediately with updated streak values
     io.to(code).emit('room_update', room);
 
-    arr.forEach(p => {
-        const payload = buildProfilePayload(p.name);
-        if (payload) io.to(p.id).emit('profile_update', payload);
-    });
+    // Persist stats to MongoDB concurrently for all players
+    await Promise.all(arr.map(async (p) => {
+        try {
+            const user = await User.findOne({ username: p.name });
+            if (!user) return;
+
+            user.totalGames++;
+            if (p.diff !== null) {
+                user.totalDiffSum = parseFloat(((user.totalDiffSum || 0) + p.diff).toFixed(2));
+            }
+            if (p.id === winner.id) {
+                user.totalWins++;
+                if (p.currentStreak > user.maxStreak) user.maxStreak = p.currentStreak;
+            }
+
+            await user.save();
+
+            io.to(p.id).emit('profile_update', buildProfilePayload(user));
+        } catch (err) {
+            console.error(`resolveRound DB error for player "${p.name}":`, err.message);
+        }
+    }));
 }
 
 const PORT = process.env.PORT || 3000;
