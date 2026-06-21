@@ -1,0 +1,13 @@
+{
+  "name": "blind-timer-online",
+  "version": "1.0.0",
+  "description": "Blind Timer Online Party Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

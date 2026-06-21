@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ბრმა წამზომი</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #eef2f7;
+            color: #0f172a;
+            overscroll-behavior: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 1: AUTH                                                -->
+    <!-- ============================================================ -->
+    <div id="screen-auth" class="w-full min-h-[100dvh] flex flex-col px-5 pt-14 pb-10">
+
+        <div class="mb-8">
+            <h1 class="text-4xl font-black text-[#0f172a] leading-none tracking-tight">ბრმა<br>წამზომი</h1>
+        </div>
+
+        <!-- Form card -->
+        <div class="bg-white rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] p-5 space-y-3">
+
+            <div class="grid grid-cols-2 gap-2">
+                <button id="tab-login" onclick="switchTab('login')"
+                    class="py-3 bg-[#4f7ef8] text-white text-xs font-black rounded-2xl border-2 border-[#0f172a] uppercase tracking-wider transition-all duration-75">
+                    შესვლა
+                </button>
+                <button id="tab-register" onclick="switchTab('register')"
+                    class="py-3 bg-white text-[#64748b] text-xs font-bold rounded-2xl border-2 border-[#cbd5e1] uppercase tracking-wider transition">
+                    რეგისტრაცია
+                </button>
+            </div>
+
+            <input id="auth-username" type="text" placeholder="სახელი" autocomplete="off"
+                class="w-full px-5 py-4 bg-[#f8fafc] border-2 border-[#e2e8f0] rounded-2xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#4f7ef8] text-sm text-center font-semibold tracking-wide">
+            <input id="auth-password" type="password" placeholder="პაროლი"
+                class="w-full px-5 py-4 bg-[#f8fafc] border-2 border-[#e2e8f0] rounded-2xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#4f7ef8] text-sm text-center font-semibold tracking-wide">
+
+            <!-- Avatar — register only -->
+            <div id="avatar-section" style="display:none" class="flex flex-col items-center gap-3 py-2">
+                <div id="avatar-circle" onclick="document.getElementById('avatar-file').click()"
+                    class="w-20 h-20 rounded-full bg-[#f1f5f9] border-2 border-[#e2e8f0] flex items-center justify-center overflow-hidden cursor-pointer">
+                    <span id="avatar-hint" class="text-[10px] text-[#94a3b8] uppercase tracking-wider text-center px-2 leading-tight">სურ.</span>
+                    <img id="avatar-preview-img" style="display:none" class="w-full h-full object-cover">
+                </div>
+                <input id="avatar-file" type="file" accept="image/*" class="hidden" onchange="handleAvatarUpload(event)">
+                <p class="text-[10px] text-[#94a3b8] uppercase tracking-wider">პროფ. სურათი (არჩ.)</p>
+            </div>
+        </div>
+
+        <p id="auth-error" class="hidden text-sm text-[#ef4444] font-bold text-center mt-4 leading-relaxed"></p>
+
+        <div class="flex-1 min-h-[40px]"></div>
+
+        <button id="auth-btn" onclick="submitAuth()"
+            class="w-full py-4 bg-[#4f7ef8] text-white text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+            შესვლა
+        </button>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 2: MAIN MENU                                           -->
+    <!-- ============================================================ -->
+    <div id="screen-main-menu" class="hidden w-full min-h-[100dvh] flex flex-col px-5 pt-14 pb-10">
+
+        <!-- Profile card: color-blocked -->
+        <div class="rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] overflow-hidden mb-5">
+            <!-- Blue header block -->
+            <div class="bg-[#4f7ef8] px-5 pt-5 pb-5 flex items-center gap-4">
+                <div id="menu-avatar"
+                    class="w-14 h-14 rounded-full bg-white/20 border-2 border-white flex items-center justify-center text-lg font-black text-white overflow-hidden flex-shrink-0">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p id="menu-username" class="text-lg font-black text-white truncate leading-tight mb-2"></p>
+                    <span id="menu-rank"
+                        class="inline-block text-[10px] font-black text-[#4f7ef8] uppercase tracking-wider bg-white rounded-full px-2.5 py-0.5">
+                    </span>
+                </div>
+                <button onclick="logout()"
+                    class="text-[10px] font-black text-white/50 uppercase tracking-wider hover:text-white transition flex-shrink-0">
+                    გასვლა
+                </button>
+            </div>
+            <!-- White stat matrix -->
+            <div class="bg-white px-4 py-4 grid grid-cols-3 divide-x-2 divide-[#f1f5f9]">
+                <div class="text-center px-1">
+                    <p class="text-[9px] text-[#94a3b8] uppercase tracking-wide mb-2 font-bold">რეკ</p>
+                    <p id="menu-maxstreak" class="text-2xl font-black text-[#0f172a] leading-none tabular-nums">0</p>
+                </div>
+                <div class="text-center px-1">
+                    <p class="text-[9px] text-[#94a3b8] uppercase tracking-wide mb-2 font-bold">მოგ%</p>
+                    <p id="menu-winrate" class="text-2xl font-black text-[#0f172a] leading-none tabular-nums">0</p>
+                </div>
+                <div class="text-center px-1">
+                    <p class="text-[9px] text-[#94a3b8] uppercase tracking-wide mb-2 font-bold">თამ</p>
+                    <p id="menu-totalgames" class="text-2xl font-black text-[#0f172a] leading-none tabular-nums">0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 min-h-[30px]"></div>
+
+        <div class="space-y-3">
+            <button onclick="createRoom()"
+                class="w-full py-4 bg-[#4f7ef8] text-white text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                თამაშის შექმნა
+            </button>
+            <button onclick="toggleJoinBox()"
+                class="w-full py-4 bg-white text-[#0f172a] text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] hover:bg-[#f8fafc] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                თამაშში შესვლა
+            </button>
+
+            <div id="join-box" class="hidden space-y-3 pt-1">
+                <input id="join-code" type="text" maxlength="4" placeholder="კოდი"
+                    class="w-full px-5 py-4 bg-white border-2 border-[#0f172a] rounded-2xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none text-center text-2xl font-black tracking-[0.4em]">
+                <button onclick="joinRoom()"
+                    class="w-full py-4 bg-white text-[#0f172a] text-xs font-black rounded-3xl border-2 border-[#0f172a] shadow-[3px_3px_0px_0px_#0f172a] hover:bg-[#f8fafc] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                    შეერთება
+                </button>
+                <p id="join-error" class="hidden text-sm text-[#ef4444] font-bold text-center"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 3: GAME LOBBY                                          -->
+    <!-- ============================================================ -->
+    <div id="screen-lobby" class="hidden w-full min-h-[100dvh] flex flex-col px-5 pt-10 pb-10">
+
+        <!-- Room code card -->
+        <div class="bg-[#4f7ef8] rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] px-5 py-4 mb-5 flex items-center justify-between">
+            <button onclick="leaveRoom()"
+                class="text-[10px] font-black text-white/60 uppercase tracking-wider hover:text-white transition">
+                გასვლა
+            </button>
+            <div class="text-center">
+                <p class="text-[9px] uppercase tracking-[0.3em] text-white/50 mb-1">ოთახი</p>
+                <p id="lobby-code" class="text-4xl font-black text-white tracking-[0.2em] tabular-nums"></p>
+            </div>
+            <div class="w-14"></div>
+        </div>
+
+        <!-- Player list -->
+        <div class="space-y-2.5 mb-4">
+            <p class="text-[10px] uppercase tracking-[0.2em] text-[#64748b] font-black px-1">მოთამაშეები</p>
+            <div id="lobby-player-list" class="space-y-2"></div>
+        </div>
+
+        <div class="flex-1 min-h-[20px]"></div>
+
+        <!-- Host challenge panel -->
+        <div id="lobby-host-panel" class="hidden space-y-3 pt-5 border-t-2 border-dashed border-[#c7d2e0]">
+            <p class="text-[10px] uppercase tracking-[0.2em] text-[#64748b] font-black text-center">სასჯელი</p>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="lobby-btn-sys" onclick="selectChallenge('system')"
+                    class="py-3.5 bg-[#4f7ef8] text-white rounded-2xl text-xs font-black border-2 border-[#0f172a] shadow-[3px_3px_0px_0px_#0f172a] uppercase tracking-wider active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all duration-75">
+                    სისტემური
+                </button>
+                <button id="lobby-btn-cus" onclick="selectChallenge('custom')"
+                    class="py-3.5 bg-white text-[#475569] rounded-2xl text-xs font-bold border-2 border-[#cbd5e1] uppercase tracking-wider transition">
+                    საკუთარი
+                </button>
+            </div>
+            <div id="lobby-custom-field" class="hidden">
+                <input id="lobby-custom-input" type="text" placeholder="ჩაწერე სასჯელი"
+                    class="w-full px-5 py-4 bg-white border-2 border-[#0f172a] rounded-2xl text-[#0f172a] placeholder-[#94a3b8] focus:outline-none text-center text-sm font-semibold">
+            </div>
+            <p id="lobby-solo-warning" class="hidden text-sm text-[#64748b] font-bold text-center py-2">
+                თამაშის დასაწყებად საჭიროა მინიმუმ 2 მოთამაშე
+            </p>
+            <button id="lobby-submit-btn" onclick="submitChallenge()"
+                class="w-full py-4 bg-[#4f7ef8] text-white text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                მომზადება
+            </button>
+        </div>
+
+        <!-- Guest wait -->
+        <p id="lobby-guest-wait" class="hidden text-center text-sm text-[#64748b] font-bold pt-5 border-t-2 border-dashed border-[#c7d2e0]">
+            ველოდებით მასპინძლის მომზადებას...
+        </p>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 4: ROUND SETUP                                         -->
+    <!-- ============================================================ -->
+    <div id="screen-round-setup" class="hidden w-full min-h-[100dvh] flex flex-col px-5 pt-14 pb-10">
+
+        <!-- Challenge card -->
+        <div class="bg-white rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] px-5 py-4 mb-6">
+            <p class="text-[10px] uppercase tracking-[0.25em] text-[#94a3b8] font-black mb-2">სასჯელი</p>
+            <p id="setup-challenge" class="text-base font-semibold text-[#374151] leading-relaxed"></p>
+        </div>
+
+        <!-- Huge target integer -->
+        <div class="flex-1 flex flex-col items-center justify-center gap-2">
+            <p class="text-[10px] uppercase tracking-[0.3em] text-[#64748b] font-black">სამიზნე დრო</p>
+            <p id="setup-target" class="text-[108px] font-black text-[#0f172a] tabular-nums leading-none"></p>
+        </div>
+
+        <p id="setup-solo-warning" class="hidden text-sm text-[#64748b] font-bold text-center mb-4">
+            თამაშის დასაწყებად საჭიროა მინიმუმ 2 მოთამაშე
+        </p>
+        <div id="setup-host-btn" class="hidden">
+            <button onclick="startRound()"
+                class="w-full py-4 bg-[#4f7ef8] text-white text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                რაუნდის დაწყება
+            </button>
+        </div>
+        <p id="setup-wait" class="hidden text-center text-sm text-[#64748b] font-bold">
+            ველოდებით მასპინძლის დაწყებას...
+        </p>
+    </div>
+
+    <!-- Fixed full-screen glow frame — shown only while timer is running -->
+    <div id="counting-glow"
+        class="hidden fixed inset-0 pointer-events-none z-50"
+        style="border: 4px solid #4f7ef8;
+               box-shadow: inset 0 0 48px rgba(79,126,248,0.22),
+                           0 0 0 4px rgba(79,126,248,0.12);"></div>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 5: COUNTING                                            -->
+    <!-- ============================================================ -->
+    <div id="screen-counting" class="hidden w-full min-h-[100dvh] flex flex-col px-5 pt-14 pb-10">
+        <div>
+            <p class="text-[10px] uppercase tracking-[0.3em] text-[#94a3b8] font-black mb-1">ათვლა</p>
+            <p class="text-sm text-[#c7d2e0] font-medium">დაათვალე სამიზნე დრო შენს გონებაში</p>
+        </div>
+
+        <!-- Spinner — hidden until timer starts -->
+        <div class="flex-1 flex items-center justify-center">
+            <div id="counting-spinner" class="hidden relative w-20 h-20">
+                <!-- Outer track ring -->
+                <div class="absolute inset-0 rounded-full border-4 border-[#e2e8f0]"></div>
+                <!-- Fast spinning arc -->
+                <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-[#4f7ef8]"
+                     style="animation: spin 0.55s linear infinite;"></div>
+                <!-- Inner accent dot -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <div class="w-2.5 h-2.5 rounded-full bg-[#4f7ef8]" style="opacity:0.7;"></div>
+                </div>
+            </div>
+            <!-- Idle dot — shown before timer starts -->
+            <div id="counting-idle-dot" class="w-2.5 h-2.5 rounded-full bg-[#c7d2e0]"></div>
+        </div>
+
+        <div class="space-y-3">
+            <button id="counting-start-btn" onclick="startPersonalTimer()"
+                class="w-full py-6 bg-[#4f7ef8] text-white text-base font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-widest">
+                დაწყება
+            </button>
+            <button id="counting-stop-btn" onclick="stopTimer()"
+                class="hidden w-full py-6 bg-[#4f7ef8] text-white text-base font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-widest">
+                გაჩერება
+            </button>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCREEN 6: RESULTS                                             -->
+    <!-- ============================================================ -->
+    <div id="screen-results" class="hidden w-full min-h-[100dvh] flex flex-col px-5 pt-10 pb-10">
+
+        <!-- Target: dark card -->
+        <div class="bg-[#0f172a] rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#4f7ef8] px-5 py-5 mb-5 text-center">
+            <p class="text-[9px] uppercase tracking-[0.35em] text-white/40 mb-3 font-black">სამიზნე</p>
+            <p id="res-target" class="text-7xl font-black text-white tabular-nums leading-none"></p>
+        </div>
+
+        <!-- Winner / Loser callout cards -->
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <div class="bg-[#22c55e] rounded-3xl border-2 border-[#0f172a] shadow-[3px_3px_0px_0px_#0f172a] p-4 text-center">
+                <p class="text-[9px] uppercase tracking-[0.25em] text-white/70 mb-2 font-black">გამარჯვ.</p>
+                <p id="res-winner" class="text-xl font-black text-white leading-tight break-all"></p>
+            </div>
+            <div class="bg-[#ef4444] rounded-3xl border-2 border-[#0f172a] shadow-[3px_3px_0px_0px_#0f172a] p-4 text-center">
+                <p class="text-[9px] uppercase tracking-[0.25em] text-white/70 mb-2 font-black">წაგებული</p>
+                <p id="res-loser" class="text-xl font-black text-white leading-tight break-all"></p>
+            </div>
+        </div>
+
+        <!-- Challenge -->
+        <p id="res-challenge" class="text-xs text-[#64748b] font-medium text-center leading-relaxed mb-4 px-2"></p>
+
+        <!-- Streak banner -->
+        <div id="streak-banner" class="hidden p-3.5 bg-[#fef2f2] border-2 border-[#ef4444] rounded-2xl text-center text-xs text-[#b91c1c] font-black leading-relaxed mb-4"></div>
+
+        <!-- Scoreboard -->
+        <div class="space-y-2 mb-4">
+            <p class="text-[10px] uppercase tracking-[0.2em] text-[#64748b] font-black px-1">შედეგები</p>
+            <div id="results-list" class="space-y-2"></div>
+        </div>
+
+        <div class="flex-1 min-h-[16px]"></div>
+
+        <!-- Buttons -->
+        <div class="space-y-3">
+            <div id="results-next-btn" class="hidden">
+                <button onclick="nextRound()"
+                    class="w-full py-4 bg-[#4f7ef8] text-white text-sm font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-wider">
+                    შემდეგი რაუნდი
+                </button>
+            </div>
+            <button onclick="leaveRoom()"
+                class="w-full py-4 bg-white text-[#64748b] text-xs font-bold rounded-3xl border-2 border-[#cbd5e1] hover:bg-[#f8fafc] active:translate-y-[1px] active:translate-x-[1px] transition-all duration-75 uppercase tracking-wider">
+                ოთახიდან გამოსვლა
+            </button>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCRIPT                                                        -->
+    <!-- ============================================================ -->
+    <script>
+        const socket = io();
+
+        let myId          = null;
+        let myProfile     = null;
+        let myRoomCode    = null;
+        let localStart    = 0;
+        let challengeMode = 'system';
+        let authMode      = 'login';
+        let pendingAvatar = null;
+
+        socket.on('connect', () => { myId = socket.id; });
+
+        // ---- SCREEN MANAGEMENT ----
+        const ALL_SCREENS = [
+            'screen-auth', 'screen-main-menu', 'screen-lobby',
+            'screen-round-setup', 'screen-counting', 'screen-results'
+        ];
+        function showScreen(id) {
+            ALL_SCREENS.forEach(s => document.getElementById(s).classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        // ---- RANK ----
+        function getRankTitle(totalWins) {
+            if (totalWins >= 15) return 'ტაიმ მასტერი';
+            if (totalWins >= 8)  return 'ქრონოსი';
+            if (totalWins >= 3)  return 'დროის დეტექტივი';
+            return 'დამწყები';
+        }
+
+        // ---- AUTH ----
+        const AUTH_TAB_ON  = 'py-3 bg-[#4f7ef8] text-white text-xs font-black rounded-2xl border-2 border-[#0f172a] uppercase tracking-wider transition-all duration-75';
+        const AUTH_TAB_OFF = 'py-3 bg-white text-[#64748b] text-xs font-bold rounded-2xl border-2 border-[#cbd5e1] uppercase tracking-wider transition';
+
+        function switchTab(mode) {
+            authMode = mode;
+            document.getElementById('tab-login').className    = mode === 'login'    ? AUTH_TAB_ON : AUTH_TAB_OFF;
+            document.getElementById('tab-register').className = mode === 'register' ? AUTH_TAB_ON : AUTH_TAB_OFF;
+            document.getElementById('avatar-section').style.display = mode === 'register' ? 'flex' : 'none';
+            document.getElementById('auth-btn').innerText = mode === 'login' ? 'შესვლა' : 'რეგისტრაცია';
+            document.getElementById('auth-username').value = '';
+            document.getElementById('auth-password').value = '';
+            document.getElementById('auth-error').classList.add('hidden');
+        }
+
+        function handleAvatarUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const SIZE = 80;
+                    canvas.width = canvas.height = SIZE;
+                    const ctx = canvas.getContext('2d');
+                    const min = Math.min(img.width, img.height);
+                    ctx.drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, SIZE, SIZE);
+                    pendingAvatar = canvas.toDataURL('image/jpeg', 0.6);
+                    document.getElementById('avatar-preview-img').src = pendingAvatar;
+                    document.getElementById('avatar-preview-img').style.display = 'block';
+                    document.getElementById('avatar-hint').style.display = 'none';
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function submitAuth() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const errEl    = document.getElementById('auth-error');
+            errEl.classList.add('hidden');
+            if (!username || !password) return;
+            if (authMode === 'register') {
+                socket.emit('register_user', { username, password, avatar: pendingAvatar });
+            } else {
+                socket.emit('login_user', { username, password });
+            }
+        }
+
+        socket.on('auth_response', (res) => {
+            if (!res.success) {
+                const errEl = document.getElementById('auth-error');
+                errEl.innerText = res.error;
+                errEl.classList.remove('hidden');
+                return;
+            }
+            myProfile = res.user;
+            renderMenu();
+        });
+
+        // ---- MENU ----
+        function renderMenu() {
+            const p       = myProfile;
+            const winRate = p.totalGames > 0 ? Math.round((p.totalWins / p.totalGames) * 100) : 0;
+
+            const avatarEl = document.getElementById('menu-avatar');
+            if (p.avatar) {
+                avatarEl.innerHTML = `<img src="${p.avatar}" class="w-full h-full object-cover">`;
+            } else {
+                avatarEl.innerText = p.username.charAt(0).toUpperCase();
+            }
+
+            document.getElementById('menu-username').innerText   = p.username;
+            document.getElementById('menu-rank').innerText       = getRankTitle(p.totalWins);
+            document.getElementById('menu-maxstreak').innerText  = p.maxStreak;
+            document.getElementById('menu-winrate').innerText    = winRate;
+            document.getElementById('menu-totalgames').innerText = p.totalGames;
+            showScreen('screen-main-menu');
+        }
+
+        function logout() {
+            myProfile  = null;
+            myRoomCode = null;
+            showScreen('screen-auth');
+        }
+
+        function createRoom() {
+            socket.emit('create_room', { username: myProfile.username }, res => {
+                if (res.error) return;
+                myRoomCode = res.code;
+            });
+        }
+
+        function toggleJoinBox() {
+            document.getElementById('join-box').classList.toggle('hidden');
+            document.getElementById('join-error').classList.add('hidden');
+        }
+
+        function joinRoom() {
+            const code  = document.getElementById('join-code').value.trim();
+            const errEl = document.getElementById('join-error');
+            errEl.classList.add('hidden');
+            if (code.length !== 4) return;
+            socket.emit('join_room', { username: myProfile.username, code }, res => {
+                if (res.error) { errEl.innerText = res.error; errEl.classList.remove('hidden'); return; }
+                myRoomCode = code;
+            });
+        }
+
+        function leaveRoom() {
+            socket.emit('leave_room');
+            myRoomCode = null;
+            renderMenu();
+        }
+
+        // ---- LOBBY ----
+        const CHAL_ON  = 'py-3.5 bg-[#4f7ef8] text-white rounded-2xl text-xs font-black border-2 border-[#0f172a] shadow-[3px_3px_0px_0px_#0f172a] uppercase tracking-wider active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all duration-75';
+        const CHAL_OFF = 'py-3.5 bg-white text-[#475569] rounded-2xl text-xs font-bold border-2 border-[#cbd5e1] uppercase tracking-wider transition';
+
+        function selectChallenge(type) {
+            challengeMode = type;
+            document.getElementById('lobby-custom-field').classList.toggle('hidden', type !== 'custom');
+            document.getElementById('lobby-btn-sys').className = type === 'system' ? CHAL_ON : CHAL_OFF;
+            document.getElementById('lobby-btn-cus').className = type === 'custom'  ? CHAL_ON : CHAL_OFF;
+        }
+
+        function submitChallenge() {
+            const text = document.getElementById('lobby-custom-input').value.trim();
+            socket.emit('set_challenge', { type: challengeMode, text });
+        }
+
+        function startRound() { socket.emit('start_round'); }
+        function nextRound()  { socket.emit('next_round'); }
+
+        // ---- COUNTING ----
+        const CLS_STOP_ACTIVE = 'w-full py-6 bg-[#4f7ef8] text-white text-base font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-widest';
+        const CLS_STOP_LOCKED = 'w-full py-6 bg-[#e2e8f0] text-[#94a3b8] text-base font-black rounded-3xl border-2 border-[#cbd5e1] uppercase tracking-widest cursor-default';
+
+        function startPersonalTimer() {
+            localStart = Date.now();
+            document.getElementById('counting-start-btn').classList.add('hidden');
+            const btn = document.getElementById('counting-stop-btn');
+            btn.classList.remove('hidden');
+            btn.className = CLS_STOP_ACTIVE;
+            // Activate visual feedback
+            document.getElementById('counting-glow').classList.remove('hidden');
+            document.getElementById('counting-spinner').classList.remove('hidden');
+            document.getElementById('counting-idle-dot').classList.add('hidden');
+        }
+
+        function stopTimer() {
+            const elapsed = (Date.now() - localStart) / 1000;
+            socket.emit('stop_timer', elapsed);
+            const btn     = document.getElementById('counting-stop-btn');
+            btn.disabled  = true;
+            btn.innerText = 'დაფიქსირდა';
+            btn.className = CLS_STOP_LOCKED;
+            // Deactivate visual feedback
+            document.getElementById('counting-glow').classList.add('hidden');
+            document.getElementById('counting-spinner').classList.add('hidden');
+            document.getElementById('counting-idle-dot').classList.remove('hidden');
+        }
+
+        function resetCounting() {
+            localStart = 0;
+            const startBtn    = document.getElementById('counting-start-btn');
+            startBtn.disabled = false;
+            startBtn.classList.remove('hidden');
+            const stopBtn     = document.getElementById('counting-stop-btn');
+            stopBtn.disabled  = false;
+            stopBtn.innerText = 'გაჩერება';
+            stopBtn.className = 'hidden w-full py-6 bg-[#4f7ef8] text-white text-base font-black rounded-3xl border-2 border-[#0f172a] shadow-[4px_4px_0px_0px_#0f172a] active:translate-y-[3px] active:translate-x-[3px] active:shadow-none transition-all duration-75 uppercase tracking-widest';
+            // Always reset visual feedback to idle state
+            document.getElementById('counting-glow').classList.add('hidden');
+            document.getElementById('counting-spinner').classList.add('hidden');
+            document.getElementById('counting-idle-dot').classList.remove('hidden');
+        }
+
+        // ---- SOCKET EVENTS ----
+        socket.on('room_update', room => {
+            const me = room.players[myId];
+            if (!me) return;
+            myRoomCode = room.code;
+            const playerCount = Object.keys(room.players).length;
+
+            if (room.status === 'LOBBY') {
+                showScreen('screen-lobby');
+                document.getElementById('lobby-code').innerText = room.code;
+
+                const list = document.getElementById('lobby-player-list');
+                list.innerHTML = '';
+                Object.values(room.players).forEach(p => {
+                    const el = document.createElement('div');
+                    el.className = 'flex items-center justify-between px-4 py-3.5 bg-white rounded-2xl border-2 border-[#0f172a] shadow-[2px_2px_0px_0px_#0f172a] text-sm';
+                    el.innerHTML = `<span class="text-[#0f172a] font-bold">${p.name}</span>`
+                        + (p.isHost ? '<span class="text-[9px] text-[#64748b] font-black uppercase tracking-widest">მასპ.</span>' : '');
+                    list.appendChild(el);
+                });
+
+                document.getElementById('lobby-host-panel').classList.toggle('hidden', !me.isHost);
+                document.getElementById('lobby-guest-wait').classList.toggle('hidden',  me.isHost);
+
+                if (me.isHost) {
+                    const solo = playerCount < 2;
+                    document.getElementById('lobby-solo-warning').classList.toggle('hidden', !solo);
+                    document.getElementById('lobby-submit-btn').classList.toggle('hidden',    solo);
+                }
+            }
+
+            else if (room.status === 'ROUND_SETUP') {
+                resetCounting();
+                showScreen('screen-round-setup');
+                document.getElementById('setup-challenge').innerText = room.challengeText;
+                document.getElementById('setup-target').innerText    = room.targetTime;
+
+                if (me.isHost) {
+                    const solo = playerCount < 2;
+                    document.getElementById('setup-solo-warning').classList.toggle('hidden', !solo);
+                    document.getElementById('setup-host-btn').classList.toggle('hidden',      solo);
+                    document.getElementById('setup-wait').classList.add('hidden');
+                } else {
+                    document.getElementById('setup-host-btn').classList.add('hidden');
+                    document.getElementById('setup-solo-warning').classList.add('hidden');
+                    document.getElementById('setup-wait').classList.remove('hidden');
+                }
+            }
+
+            else if (room.status === 'COUNTING') {
+                showScreen('screen-counting');
+                if (me.ready) {
+                    // Already submitted — deactivate everything
+                    document.getElementById('counting-start-btn').classList.add('hidden');
+                    document.getElementById('counting-glow').classList.add('hidden');
+                    document.getElementById('counting-spinner').classList.add('hidden');
+                    document.getElementById('counting-idle-dot').classList.remove('hidden');
+                    const s   = document.getElementById('counting-stop-btn');
+                    s.classList.remove('hidden');
+                    s.disabled  = true;
+                    s.innerText = 'დაფიქსირდა';
+                    s.className = CLS_STOP_LOCKED;
+                }
+            }
+
+            else if (room.status === 'RESULTS') {
+                showScreen('screen-results');
+                document.getElementById('res-target').innerText    = room.targetTime;
+                document.getElementById('res-winner').innerText    = room.lastWinnerName;
+                document.getElementById('res-loser').innerText     = room.lastLoserName;
+                document.getElementById('res-challenge').innerText = room.challengeText;
+                document.getElementById('results-next-btn').classList.toggle('hidden', !me.isHost);
+
+                const list = document.getElementById('results-list');
+                list.innerHTML = '';
+                let brokenText = '';
+
+                Object.values(room.players).forEach(p => {
+                    const row = document.createElement('div');
+                    row.className = 'flex justify-between items-center px-4 py-4 bg-white rounded-2xl border-2 border-[#0f172a] shadow-[2px_2px_0px_0px_#0f172a]';
+
+                    const nameEl = document.createElement('span');
+                    nameEl.className = p.name === room.lastLoserName
+                        ? 'text-sm font-black text-[#ef4444]'
+                        : 'text-sm font-black text-[#0f172a]';
+                    nameEl.innerText = p.currentStreak > 0
+                        ? `${p.name} \u{1F451} ${p.currentStreak}`
+                        : p.name;
+
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'font-mono text-sm text-[#64748b] font-bold tabular-nums';
+                    const diff = parseFloat((p.clickedTime - room.targetTime).toFixed(2));
+                    timeEl.innerText = `${p.clickedTime.toFixed(2)} (${diff >= 0 ? '+' : ''}${diff.toFixed(2)})`;
+
+                    row.appendChild(nameEl);
+                    row.appendChild(timeEl);
+                    list.appendChild(row);
+
+                    if (p.brokeStreak) {
+                        brokenText = `სერია ჩაიშალა: ${p.name}-ის ${p.previousStreakValue}-მატჩიანი სერია დასრულდა`;
+                    }
+                });
+
+                const banner = document.getElementById('streak-banner');
+                if (brokenText) { banner.innerText = brokenText; banner.classList.remove('hidden'); }
+                else            { banner.classList.add('hidden'); }
+            }
+        });
+
+        socket.on('profile_update', data => {
+            if (!myProfile) return;
+            myProfile.maxStreak    = data.maxStreak;
+            myProfile.totalGames   = data.totalGames;
+            myProfile.totalWins    = data.totalWins;
+            myProfile.totalDiffSum = data.totalDiffSum;
+
+            const winRate = data.totalGames > 0 ? Math.round((data.totalWins / data.totalGames) * 100) : 0;
+
+            document.getElementById('menu-rank').innerText       = getRankTitle(data.totalWins);
+            document.getElementById('menu-maxstreak').innerText  = data.maxStreak;
+            document.getElementById('menu-winrate').innerText    = winRate;
+            document.getElementById('menu-totalgames').innerText = data.totalGames;
+        });
+    </script>
+</body>
+</html>
