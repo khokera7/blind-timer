@@ -10,13 +10,18 @@ const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/ping', (req, res) => res.send('OK'));
+
 // ---- DATABASE ----
 const MONGO_URI =
     'mongodb+srv://aleksandrekhokerashvili_db_user:QWLibnpv7LZ4KiPu@cluster0.z0pxavb.mongodb.net/blind_timer?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => console.error('MongoDB initial connection error:', err));
+
+mongoose.connection.on('error', err => console.error('MongoDB error:', err));
+mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected'));
 
 const userSchema = new mongoose.Schema({
     username:     { type: String, required: true, unique: true },
@@ -124,7 +129,9 @@ function playerLeaveRoom(socket) {
 // ---- SOCKET HANDLERS ----
 io.on('connection', (socket) => {
 
-    socket.on('register_user', async ({ username, password, avatar }) => {
+    socket.on('register_user', async (data) => {
+        console.log('User registering:', data?.username);
+        const { username, password, avatar } = data || {};
         if (!username || !password) {
             return socket.emit('auth_response', { success: false, error: 'შეიყვანეთ სახელი და პაროლი' });
         }
@@ -135,22 +142,29 @@ io.on('connection', (socket) => {
             }
             const user = new User({ username, password, avatar: avatar || null });
             await user.save();
+            console.log('Registered new user:', username);
             socket.emit('auth_response', { success: true, user: buildProfilePayload(user) });
         } catch (err) {
-            console.error('register_user error:', err);
+            console.error('register_user error:', err.message);
             socket.emit('auth_response', { success: false, error: 'სერვერის შეცდომა' });
         }
     });
 
-    socket.on('login_user', async ({ username, password }) => {
+    socket.on('login_user', async (data) => {
+        console.log('User logging in:', data?.username);
+        const { username, password } = data || {};
+        if (!username || !password) {
+            return socket.emit('auth_response', { success: false, error: 'შეიყვანეთ სახელი და პაროლი' });
+        }
         try {
             const user = await User.findOne({ username });
             if (!user || user.password !== password) {
                 return socket.emit('auth_response', { success: false, error: 'არასწორი სახელი ან პაროლი' });
             }
+            console.log('Login successful:', username);
             socket.emit('auth_response', { success: true, user: buildProfilePayload(user) });
         } catch (err) {
-            console.error('login_user error:', err);
+            console.error('login_user error:', err.message);
             socket.emit('auth_response', { success: false, error: 'სერვერის შეცდომა' });
         }
     });
